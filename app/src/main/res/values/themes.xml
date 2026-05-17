@@ -1,0 +1,4 @@
+<resources>
+
+    <style name="Theme.MpvOverSsh" parent="Theme.MaterialComponents.Light" />
+</resources>
