@@ -1,5 +1,14 @@
 # Project Plan v2 - Dashboard and UX Expansion
 
+## What changed (implementation status)
+- **Phase 1 (Completed):** URL play, Stop/Next/Previous/Launch mpv controls, seek slider command dispatch, custom command input, and append-only terminal logging are implemented.
+- **Phase 2 (Completed):** Dashboard top app bar back navigation, connection status indicator, and Material 3 control/layout polish are implemented.
+- **Phase 3 (Completed):** Error snackbar flow, readable terminal error lines, command history with re-run, and improved connection-vs-command failure messaging are implemented.
+- **Phase 4 (Completed):** Remote filesystem browser (bottom sheet), directory navigation, and file selection to mpv playback are implemented.
+- **Phase 5 (Completed):** Theme mode preference (`System`/`Light`/`Dark`) via DataStore, app-level theme application, and dashboard theme selector are implemented.
+- **Additional hardening added:** socket readiness tracking, socket-control gating, and explicit `Check Connection` action.
+- **Current focus:** Phase 6 RTMP design has started.
+
 ## Scope split
 - **MVP in this milestone:** items 1-12.
 - **Separate epic:** item 13 (Play Local Media via RTMP), due to streaming complexity and infrastructure needs.
@@ -11,6 +20,7 @@
 
 ## Phase 1 - Core dashboard controls
 **Features:** 1, 2, 3, 4, 11
+**Status:** Completed
 
 ### Tasks
 1. Add URL input field and `Play URL` action.
@@ -27,6 +37,7 @@
 
 ## Phase 2 - Navigation, status, and UI polish
 **Features:** 5, 7, 9
+**Status:** Completed
 
 ### Tasks
 1. Add dashboard top app bar with back action to profile list.
@@ -41,6 +52,7 @@
 
 ## Phase 3 - Error handling and command history
 **Features:** 6, 10
+**Status:** Completed
 
 ### Tasks
 1. Add explicit command result handling in ViewModel for success/failure.
@@ -55,6 +67,7 @@
 
 ## Phase 4 - Remote filesystem picker
 **Feature:** 8
+**Status:** Completed
 
 ### Tasks
 1. Add remote browser state: current path, entries, loading, error.
@@ -68,6 +81,7 @@
 
 ## Phase 5 - Dark mode support
 **Feature:** 12
+**Status:** Completed
 
 ### Tasks
 1. Add user theme preference (`System`, `Light`, `Dark`) via DataStore.
@@ -79,6 +93,16 @@
 
 ## Phase 6 - Separate design epic: Play Local Media via RTMP
 **Feature:** 13
+**Status:** In Progress
+
+### Design doc
+- See `.agent/phase-6-rtmp-design.md` for the technical proposal.
+- Streaming stack decision: **FFmpeg-based RTMP publishing**.
+
+### Immediate next actions
+1. Pin FFmpeg dependency/package variant and add streaming wrapper interface (`RtmpStreamer`).
+2. Validate host RTMP ingest on a real Linux target and document setup script/steps.
+3. Define `DashboardViewModel` stream state model + foreground service contract before coding.
 
 ### Deliverables
 1. Technical design doc for Android-side media selection + streaming pipeline.

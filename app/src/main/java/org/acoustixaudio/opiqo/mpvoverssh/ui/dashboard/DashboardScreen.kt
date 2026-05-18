@@ -3,6 +3,9 @@
 package org.acoustixaudio.opiqo.mpvoverssh.ui.dashboard
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -28,12 +31,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.acoustixaudio.opiqo.mpvoverssh.MpvOverSshApplication
+import org.acoustixaudio.opiqo.mpvoverssh.settings.ThemeMode
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
     application: MpvOverSshApplication,
     profileId: Long,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -46,14 +52,29 @@ fun DashboardScreen(
     var mediaUrl by rememberSaveable { mutableStateOf("") }
     var customCommand by rememberSaveable { mutableStateOf("") }
     var seekPercent by rememberSaveable { mutableFloatStateOf(50f) }
+    var showThemeMenu by remember { mutableStateOf(false) }
 
     val isBusy = uiState.connectionStatus == ConnectionStatus.Connecting
+    val socketControlsEnabled = !isBusy &&
+        uiState.connectionStatus == ConnectionStatus.Connected &&
+        uiState.isSocketReady
 
     LaunchedEffect(uiState.errorMessage) {
         uiState.errorMessage?.let { message ->
             snackbarHostState.showSnackbar(message)
             viewModel.clearErrorMessage()
         }
+    }
+
+    if (uiState.remoteBrowser.isVisible) {
+        RemoteFileBrowserSheet(
+            browser = uiState.remoteBrowser,
+            onDismiss = viewModel::closeRemoteBrowser,
+            onNavigateUp = viewModel::navigateUpDirectory,
+            onOpenDirectory = { entry -> viewModel.navigateToDirectory(entry.path) },
+            onSelectFile = { entry -> viewModel.selectRemoteFile(entry.path) },
+            onClearError = viewModel::clearRemoteBrowserError
+        )
     }
 
     Scaffold(
@@ -66,6 +87,55 @@ fun DashboardScreen(
                     }
                 },
                 actions = {
+                    Box {
+                        IconButton(onClick = { showThemeMenu = true }) {
+                            Icon(Icons.Rounded.Palette, contentDescription = "Theme")
+                        }
+                        DropdownMenu(
+                            expanded = showThemeMenu,
+                            onDismissRequest = { showThemeMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("System") },
+                                onClick = {
+                                    onThemeModeChange(ThemeMode.System)
+                                    showThemeMenu = false
+                                },
+                                trailingIcon = {
+                                    if (themeMode == ThemeMode.System) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Light") },
+                                onClick = {
+                                    onThemeModeChange(ThemeMode.Light)
+                                    showThemeMenu = false
+                                },
+                                trailingIcon = {
+                                    if (themeMode == ThemeMode.Light) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Dark") },
+                                onClick = {
+                                    onThemeModeChange(ThemeMode.Dark)
+                                    showThemeMenu = false
+                                },
+                                trailingIcon = {
+                                    if (themeMode == ThemeMode.Dark) {
+                                        Icon(Icons.Rounded.Check, contentDescription = null)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                    IconButton(onClick = { viewModel.clearCommandHistory() }) {
+                        Icon(Icons.Rounded.History, contentDescription = "Clear History")
+                    }
                     IconButton(onClick = { viewModel.clearTerminal() }) {
                         Icon(Icons.Rounded.DeleteSweep, contentDescription = "Clear Terminal")
                     }
@@ -82,7 +152,21 @@ fun DashboardScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            ConnectionStatusChip(status = uiState.connectionStatus)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                ConnectionStatusChip(status = uiState.connectionStatus)
+                OutlinedButton(
+                    onClick = { viewModel.checkConnection() },
+                    enabled = !isBusy
+                ) {
+                    Icon(Icons.Rounded.Sync, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Check Connection")
+                }
+            }
 
             OutlinedTextField(
                 value = mediaUrl,
@@ -101,10 +185,29 @@ fun DashboardScreen(
                 }
             )
 
+            OutlinedButton(
+                onClick = { viewModel.openRemoteBrowser(uiState.remoteBrowser.currentPath) },
+                enabled = !isBusy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Rounded.FolderOpen, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Browse Remote Files")
+            }
+
             ControlGrid(
                 viewModel = viewModel,
-                isLoading = isBusy
+                socketControlsEnabled = socketControlsEnabled,
+                launchEnabled = !isBusy
             )
+
+            if (!uiState.isSocketReady) {
+                Text(
+                    text = "Launch mpv or play media to enable playback controls.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
 
             Text(
                 text = "Seek: ${seekPercent.toInt()}%",
@@ -117,7 +220,7 @@ fun DashboardScreen(
                     viewModel.seekToPercent(seekPercent.toInt())
                 },
                 valueRange = 0f..100f,
-                enabled = !isBusy
+                enabled = socketControlsEnabled
             )
 
             Row(
@@ -143,6 +246,14 @@ fun DashboardScreen(
                 }
             }
 
+            CommandHistoryView(
+                history = uiState.commandHistory,
+                onRerun = viewModel::rerunCommand,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 200.dp)
+            )
+
             TerminalView(
                 output = uiState.terminalOutput,
                 modifier = Modifier.weight(1f)
@@ -151,10 +262,171 @@ fun DashboardScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RemoteFileBrowserSheet(
+    browser: RemoteBrowserState,
+    onDismiss: () -> Unit,
+    onNavigateUp: () -> Unit,
+    onOpenDirectory: (RemoteFsEntry) -> Unit,
+    onSelectFile: (RemoteFsEntry) -> Unit,
+    onClearError: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Remote Files", style = MaterialTheme.typography.titleMedium)
+                TextButton(onClick = onNavigateUp, enabled = !browser.isLoading) {
+                    Icon(Icons.Rounded.ArrowUpward, contentDescription = null)
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Up")
+                }
+            }
+
+            Text(
+                text = browser.currentPath,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            browser.errorMessage?.let { message ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onClearError) {
+                        Text("Dismiss")
+                    }
+                }
+            }
+
+            if (browser.isLoading) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    CircularProgressIndicator()
+                }
+            } else if (browser.entries.isEmpty()) {
+                Text(
+                    text = "No files found.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 12.dp)
+                )
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) {
+                    items(browser.entries, key = { it.path }) { entry ->
+                        val icon = if (entry.isDirectory) Icons.Rounded.Folder else Icons.Rounded.InsertDriveFile
+                        val clickAction = if (entry.isDirectory) {
+                            { onOpenDirectory(entry) }
+                        } else {
+                            { onSelectFile(entry) }
+                        }
+
+                        ListItem(
+                            modifier = Modifier.clickable(onClick = clickAction),
+                            headlineContent = { Text(entry.name, maxLines = 1) },
+                            supportingContent = {
+                                Text(if (entry.isDirectory) "Directory" else "File")
+                            },
+                            leadingContent = { Icon(icon, contentDescription = null) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CommandHistoryView(
+    history: List<CommandHistoryItem>,
+    onRerun: (CommandHistoryItem) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(modifier = modifier) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Command History", style = MaterialTheme.typography.titleSmall)
+            if (history.isEmpty()) {
+                Text(
+                    text = "No commands yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(history, key = { it.id }) { entry ->
+                        ElevatedCard {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "\$ ${entry.command}",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        text = entry.output,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (entry.isError) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        maxLines = 2
+                                    )
+                                }
+                                FilledTonalIconButton(onClick = { onRerun(entry) }) {
+                                    Icon(Icons.Rounded.Replay, contentDescription = "Run Again")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @Composable
 fun ControlGrid(
     viewModel: DashboardViewModel,
-    isLoading: Boolean
+    socketControlsEnabled: Boolean,
+    launchEnabled: Boolean
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(
@@ -166,14 +438,14 @@ fun ControlGrid(
                 label = "Play/Pause",
                 onClick = { viewModel.playPause() },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
             ControlButton(
                 icon = Icons.Rounded.Stop,
                 label = "Stop",
                 onClick = { viewModel.stopPlayback() },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
         }
         Row(
@@ -185,14 +457,14 @@ fun ControlGrid(
                 label = "-5s",
                 onClick = { viewModel.seekBySeconds(-5) },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
             ControlButton(
                 icon = Icons.Rounded.FastForward,
                 label = "+5s",
                 onClick = { viewModel.seekBySeconds(5) },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
         }
         Row(
@@ -204,14 +476,14 @@ fun ControlGrid(
                 label = "Vol -",
                 onClick = { viewModel.adjustVolume(-5) },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
             ControlButton(
                 icon = Icons.Rounded.VolumeUp,
                 label = "Vol +",
                 onClick = { viewModel.adjustVolume(5) },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
         }
         Row(
@@ -223,21 +495,21 @@ fun ControlGrid(
                 label = "Previous",
                 onClick = { viewModel.previousTrack() },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
             ControlButton(
                 icon = Icons.Rounded.SkipNext,
                 label = "Next",
                 onClick = { viewModel.nextTrack() },
                 modifier = Modifier.weight(1f),
-                enabled = !isLoading
+                enabled = socketControlsEnabled
             )
         }
         FilledTonalButton(
             onClick = { viewModel.launchMpv() },
             modifier = Modifier.fillMaxWidth().height(56.dp),
             shape = RoundedCornerShape(16.dp),
-            enabled = !isLoading
+            enabled = launchEnabled
         ) {
             Icon(Icons.Rounded.RocketLaunch, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
