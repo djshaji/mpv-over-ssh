@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.acoustixaudio.opiqo.mpvoverssh.data.AppRepository
 import org.acoustixaudio.opiqo.mpvoverssh.data.SshProfile
+import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 
 data class DashboardUiState(
     val profile: SshProfile? = null,
@@ -17,6 +18,7 @@ data class DashboardUiState(
     val terminalOutput: String = "",
     val commandHistory: List<CommandHistoryItem> = emptyList(),
     val remoteBrowser: RemoteBrowserState = RemoteBrowserState(),
+    val streamState: StreamState = StreamState.Idle,
     val isSocketReady: Boolean = false,
     val errorMessage: String? = null
 )
