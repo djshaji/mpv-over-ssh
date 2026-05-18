@@ -13,10 +13,16 @@ import org.acoustixaudio.opiqo.mpvoverssh.data.SshProfile
 
 data class DashboardUiState(
     val profile: SshProfile? = null,
-    val isConnecting: Boolean = false,
+    val connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
     val terminalOutput: String = "",
     val errorMessage: String? = null
 )
+
+enum class ConnectionStatus {
+    Disconnected,
+    Connecting,
+    Connected
+}
 
 class DashboardViewModel(
     private val repository: AppRepository,
@@ -39,32 +45,86 @@ class DashboardViewModel(
 
     fun sendCommand(command: String) {
         val profile = uiState.value.profile ?: return
-        
+
         viewModelScope.launch {
-            _uiState.update { it.copy(isConnecting = true, errorMessage = null) }
+            _uiState.update { it.copy(connectionStatus = ConnectionStatus.Connecting, errorMessage = null) }
             val result = repository.executeCommand(profile, command)
-            
+
             result.onSuccess { output ->
                 _uiState.update { state ->
                     state.copy(
-                        terminalOutput = state.terminalOutput + "\n$ " + command + "\n" + output,
-                        isConnecting = false
+                        terminalOutput = appendTerminal(state.terminalOutput, command, output),
+                        connectionStatus = ConnectionStatus.Connected
                     )
                 }
             }.onFailure { error ->
                 _uiState.update { state ->
                     state.copy(
-                        terminalOutput = state.terminalOutput + "\n$ " + command + "\nError: " + error.message,
-                        isConnecting = false,
-                        errorMessage = error.message
+                        terminalOutput = appendTerminal(
+                            state.terminalOutput,
+                            command,
+                            "Error: ${error.message ?: "Unknown error"}"
+                        ),
+                        connectionStatus = ConnectionStatus.Disconnected,
+                        errorMessage = error.message ?: "Unknown error"
                     )
                 }
             }
         }
     }
 
+    fun playPause() = sendSocketCommand("cycle pause")
+
+    fun stopPlayback() = sendSocketCommand("stop")
+
+    fun seekBySeconds(seconds: Int) = sendSocketCommand("seek $seconds")
+
+    fun seekToPercent(percent: Int) = sendSocketCommand("seek $percent absolute-percent")
+
+    fun adjustVolume(delta: Int) = sendSocketCommand("add volume $delta")
+
+    fun nextTrack() = sendSocketCommand("playlist-next")
+
+    fun previousTrack() = sendSocketCommand("playlist-prev")
+
+    fun launchMpv() {
+        sendCommand("pgrep -x mpv >/dev/null || nohup mpv --idle --force-window --input-ipc-server=/tmp/mpvsocket >/tmp/mpv.log 2>&1 &")
+    }
+
+    fun playUrl(url: String) {
+        val trimmedUrl = url.trim()
+        if (trimmedUrl.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "URL cannot be empty") }
+            return
+        }
+        val escapedUrl = trimmedUrl.replace("\"", "\\\"")
+        sendCommand("nohup mpv --force-window --input-ipc-server=/tmp/mpvsocket \"$escapedUrl\" >/tmp/mpv.log 2>&1 &")
+    }
+
+    fun sendCustomCommand(command: String) {
+        val trimmedCommand = command.trim()
+        if (trimmedCommand.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Command cannot be empty") }
+            return
+        }
+        sendCommand(trimmedCommand)
+    }
+
     fun clearTerminal() {
         _uiState.update { it.copy(terminalOutput = "") }
+    }
+
+    fun clearErrorMessage() {
+        _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    private fun sendSocketCommand(command: String) {
+        sendCommand("echo \"$command\" | socat - /tmp/mpvsocket")
+    }
+
+    private fun appendTerminal(current: String, command: String, output: String): String {
+        val prefix = if (current.isBlank()) "" else "\n"
+        return "$current$prefix\$ $command\n${output.trimEnd()}"
     }
 
     class Factory(
