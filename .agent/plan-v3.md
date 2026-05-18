@@ -11,3 +11,7 @@
 - [x] On first opening the app, when user selects a profile, open the mpv control dashboard directly.
 - [x] Add an edit icon to the profile selection cards that allows users to edit the SSH connection details and save changes.
 - [x] Add a "Play Local Media" button in the dashboard that initiates the media selection and streaming flow.
+- [x] Ask before deleting a profile with a confirmation dialog.
+- [x] Implement simple http streaming server in the app using Android httpd, NanoHTTPD, or similar library to serve local media files over HTTP for streaming.
+- [x] Add about page with app version, author info, and links to source code and issue tracker.
+- [x] Add a "Report an Issue" button that opens the user's email client with a pre-filled email template for bug reports and feedback.

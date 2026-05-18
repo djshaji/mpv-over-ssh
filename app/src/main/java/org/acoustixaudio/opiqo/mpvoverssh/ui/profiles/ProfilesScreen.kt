@@ -1,6 +1,5 @@
 package org.acoustixaudio.opiqo.mpvoverssh.ui.profiles
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material3.*
@@ -52,6 +52,10 @@ fun ProfilesScreen(
                 ProfileListPane(
                     profiles = profiles,
                     onProfileClick = { profileId ->
+                        // Directly navigate to dashboard instead of opening detail pane
+                        onNavigateToDashboard(profileId)
+                    },
+                    onEditProfile = { profileId ->
                         scope.launch {
                             navigator.navigateTo(ListDetailPaneScaffoldRole.Detail, profileId)
                         }
@@ -103,6 +107,7 @@ fun ProfilesScreen(
 fun ProfileListPane(
     profiles: List<SshProfile>,
     onProfileClick: (Long) -> Unit,
+    onEditProfile: (Long) -> Unit,
     onAddProfile: () -> Unit
 ) {
     Scaffold(
@@ -124,6 +129,11 @@ fun ProfileListPane(
                 ListItem(
                     headlineContent = { Text(profile.name) },
                     supportingContent = { Text("${profile.username}@${profile.host}:${profile.port}") },
+                    trailingContent = {
+                        IconButton(onClick = { onEditProfile(profile.id) }) {
+                            Icon(Icons.Rounded.Edit, contentDescription = "Edit Profile")
+                        }
+                    },
                     modifier = Modifier.clickable { onProfileClick(profile.id) }
                 )
                 HorizontalDivider()

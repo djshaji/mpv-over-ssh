@@ -66,6 +66,7 @@ fun DashboardScreen(
     var streamKey by rememberSaveable { mutableStateOf("mobile") }
     var selectedLocalUri by rememberSaveable { mutableStateOf("") }
     var showThemeMenu by remember { mutableStateOf(false) }
+    var showTerminal by rememberSaveable { mutableStateOf(true) }
 
     val localMediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -184,13 +185,14 @@ fun DashboardScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         modifier = modifier
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
+         Column(
+             modifier = Modifier
+                 .fillMaxSize()
+                 .padding(padding)
+                 .padding(16.dp)
+                 .verticalScroll(rememberScrollState()),
+             verticalArrangement = Arrangement.spacedBy(16.dp)
+         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -303,10 +305,38 @@ fun DashboardScreen(
                     .heightIn(max = 200.dp)
             )
 
-            TerminalView(
-                output = uiState.terminalOutput,
-                modifier = Modifier.weight(1f)
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Terminal Output",
+                    style = MaterialTheme.typography.titleSmall
+                )
+                FilledTonalButton(
+                    onClick = { showTerminal = !showTerminal },
+                    modifier = Modifier.height(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (showTerminal) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        contentDescription = if (showTerminal) "Hide Terminal" else "Show Terminal"
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (showTerminal) "Hide" else "Show")
+                }
+            }
+
+            if (showTerminal) {
+                TerminalView(
+                    output = uiState.terminalOutput,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 200.dp, max = 400.dp)
+                )
+            }
         }
     }
 }

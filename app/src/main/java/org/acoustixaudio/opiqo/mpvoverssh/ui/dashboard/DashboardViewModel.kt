@@ -307,7 +307,7 @@ class DashboardViewModel(
     private fun listRemoteDirectory(path: String) {
         val profile = uiState.value.profile ?: return
         val quotedPath = shellQuote(path)
-        val command = "if [ -d $quotedPath ]; then cd $quotedPath && pwd && find . -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n' | LC_ALL=C sort; else echo '__ERROR__ Not a directory'; exit 1; fi"
+        val command = "if [ -d $quotedPath ]; then cd $quotedPath && pwd && find -L . -mindepth 1 -maxdepth 1 -printf '%y\\t%f\\n' | LC_ALL=C sort; else echo '__ERROR__ Not a directory'; exit 1; fi"
 
         viewModelScope.launch {
             _uiState.update { state ->
