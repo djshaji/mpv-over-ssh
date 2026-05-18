@@ -1,19 +1,91 @@
-# Implement following features in the app:
-1. Enter url to play media from the dashboard.
-2. New buttons:
-   - Play URL: Prompts the user to enter a media URL and sends the appropriate command to mpv.
-   - Stop: Sends a command to stop playback.
-   - Next/Previous: Commands to navigate through the playlist.
-3. Seek slider: A slider to seek through the currently playing media. (no need to implement the actual seeking logic, just the UI component and command sending: seek to fixed percentage of the media length, e.g., 50% when the slider is at the middle).
-4. Launch mpv: A button to start the mpv process on the remote host if it's not already running.
-5. Display current media title: A text view that shows the title of the currently playing media, which can be retrieved using a command like `echo "get_title" | socat - /tmp/mpvsocket`.
-6. Navigation improvements: Add a back button to the dashboard to return to the profile selection screen, and ensure that the app handles navigation correctly when the back button is pressed.
-7. Error handling: Implement error handling for SSH command execution, such as displaying a toast message if a command fails or if the connection is lost.
-8. UI enhancements: Improve the visual design of the dashboard with better spacing, icons for buttons, and a more polished layout using Material 3 components.
-9. Navigate filesystem: Add a file picker to the dashboard that allows users to browse the remote filesystem and select media files to play with mpv. This can be implemented using a simple list of directories and files retrieved via SSH commands.
-10. Connection status indicator: Add a visual indicator on the dashboard that shows the current connection status (e.g., connected, disconnected, connecting) to provide feedback to the user about the SSH connection state.
-11. Command history: Implement a command history feature that allows users to see a list of previously executed commands and their outputs in the terminal view, with the ability to re-execute commands from the history.
-12. Custom command input: Add a text input field on the dashboard where users can enter custom commands to be sent to the remote host, allowing for more advanced control and flexibility beyond the predefined buttons.
-13. Multi-profile support: Enhance the profile management to allow users to switch between multiple SSH profiles easily from the dashboard, enabling quick access to different remote hosts without needing to return to the profile selection screen.
-14. Dark mode support: Implement a dark theme for the app that can be toggled by the user, providing a more comfortable viewing experience in low-light environments. This can be achieved by defining a dark color scheme in the Material 3 theme setup and allowing users to switch between light and dark modes in the app settings.
-15. Media metadata display: Extend the dashboard to show additional metadata about the currently playing media, such as duration, current playback time, and file size. This information can be retrieved using appropriate mpv commands and displayed in a user-friendly format on the dashboard.
+# Project Plan v2 - Dashboard and UX Expansion
+
+## Scope split
+- **MVP in this milestone:** items 1-12.
+- **Separate epic:** item 13 (Play Local Media via RTMP), due to streaming complexity and infrastructure needs.
+
+## Constraints to preserve
+- Keep architecture: `UI -> ViewModel -> AppRepository -> SshManager`.
+- Keep routing model in `ui/navigation/Routes.kt` and `MainActivity`.
+- Keep terminal output append-only in `DashboardViewModel` (do not replace whole buffer).
+
+## Phase 1 - Core dashboard controls
+**Features:** 1, 2, 3, 4, 11
+
+### Tasks
+1. Add URL input field and `Play URL` action.
+2. Add control buttons: `Stop`, `Next`, `Previous`, `Launch mpv`.
+3. Add seek slider (`0..100`) that sends a fixed-percentage seek command.
+4. Add custom command input and send action.
+5. Ensure every action appends command + output to terminal panel.
+
+### Acceptance criteria
+- User can paste URL and trigger playback.
+- All new buttons send the expected remote commands.
+- Slider dispatches seek command using current percentage value.
+- Custom command field sends raw command and shows output.
+
+## Phase 2 - Navigation, status, and UI polish
+**Features:** 5, 7, 9
+
+### Tasks
+1. Add dashboard top app bar with back action to profile list.
+2. Ensure system back behaves consistently (`Dashboard -> Profiles`).
+3. Add connection status indicator (`Connecting`, `Connected`, `Disconnected`).
+4. Improve dashboard spacing, icons, grouping, and Material 3 hierarchy.
+
+### Acceptance criteria
+- Back button and system back always return to profile selection from dashboard.
+- Connection state is visible and updates during command lifecycle.
+- Layout is visually improved without breaking existing functionality.
+
+## Phase 3 - Error handling and command history
+**Features:** 6, 10
+
+### Tasks
+1. Add explicit command result handling in ViewModel for success/failure.
+2. Show toast/snackbar when command fails or connection is lost.
+3. Append readable error lines to terminal output.
+4. Add command history list with re-execute action.
+
+### Acceptance criteria
+- Failures produce user-visible feedback and terminal error output.
+- Connection-loss state is reflected in status indicator.
+- User can re-run a previous command from history.
+
+## Phase 4 - Remote filesystem picker
+**Feature:** 8
+
+### Tasks
+1. Add remote browser state: current path, entries, loading, error.
+2. Retrieve directory/file listing via SSH command and parse it safely.
+3. Add a simple picker UI (dialog/sheet) for navigation and file select.
+4. Selecting a media file sends mpv play command and logs output.
+
+### Acceptance criteria
+- User can browse remote directories and select a file.
+- Selected file starts playback command on remote host.
+
+## Phase 5 - Dark mode support
+**Feature:** 12
+
+### Tasks
+1. Add user theme preference (`System`, `Light`, `Dark`) via DataStore.
+2. Apply preference in `MpvOverSshTheme` and preserve edge-to-edge behavior.
+3. Add UI toggle entry in settings/dashboard overflow.
+
+### Acceptance criteria
+- Theme mode changes immediately and persists app restarts.
+
+## Phase 6 - Separate design epic: Play Local Media via RTMP
+**Feature:** 13
+
+### Deliverables
+1. Technical design doc for Android-side media selection + streaming pipeline.
+2. Remote host requirements (receiver, ingestion command, lifecycle handling).
+3. Reliability checklist: bandwidth, reconnect, latency, cleanup, failure UX.
+
+## Validation checklist
+1. `./gradlew assembleDebug`
+2. `./gradlew test`
+3. Manual verification for each phase acceptance criterion above.
