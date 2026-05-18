@@ -2,6 +2,8 @@
 
 package org.acoustixaudio.opiqo.mpvoverssh.ui.dashboard
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -9,6 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.*
@@ -25,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +37,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import org.acoustixaudio.opiqo.mpvoverssh.MpvOverSshApplication
 import org.acoustixaudio.opiqo.mpvoverssh.settings.ThemeMode
+import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,8 +49,13 @@ fun DashboardScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val viewModel: DashboardViewModel = viewModel(
-        factory = DashboardViewModel.Factory(application.repository, profileId)
+        factory = DashboardViewModel.Factory(
+            application.repository,
+            application.localMediaStreamController,
+            profileId
+        )
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -52,7 +63,35 @@ fun DashboardScreen(
     var mediaUrl by rememberSaveable { mutableStateOf("") }
     var customCommand by rememberSaveable { mutableStateOf("") }
     var seekPercent by rememberSaveable { mutableFloatStateOf(50f) }
+    var streamKey by rememberSaveable { mutableStateOf("mobile") }
+    var selectedLocalUri by rememberSaveable { mutableStateOf("") }
     var showThemeMenu by remember { mutableStateOf(false) }
+
+    val localMediaPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            selectedLocalUri = uri.toString()
+            val host = uiState.profile?.host
+            if (host.isNullOrBlank()) {
+                viewModel.reportUserError("Profile host is missing. Update profile settings first.")
+                return@rememberLauncherForActivityResult
+            }
+            val normalizedStreamKey = streamKey.trim()
+            if (normalizedStreamKey.isBlank()) {
+                viewModel.reportUserError("Stream key cannot be empty.")
+                return@rememberLauncherForActivityResult
+            }
+            val publishUrl = "rtmp://$host:1935/live/$normalizedStreamKey"
+            viewModel.startLocalMediaStream(uri, publishUrl)
+        }
+    }
 
     val isBusy = uiState.connectionStatus == ConnectionStatus.Connecting
     val socketControlsEnabled = !isBusy &&
@@ -195,6 +234,16 @@ fun DashboardScreen(
                 Text("Browse Remote Files")
             }
 
+            LocalStreamingCard(
+                streamState = uiState.streamState,
+                streamKey = streamKey,
+                selectedLocalUri = selectedLocalUri,
+                onStreamKeyChange = { streamKey = it },
+                onPickMedia = { localMediaPicker.launch(arrayOf("video/*", "audio/*")) },
+                onStopStream = viewModel::stopLocalMediaStream,
+                enabled = !isBusy
+            )
+
             ControlGrid(
                 viewModel = viewModel,
                 socketControlsEnabled = socketControlsEnabled,
@@ -260,6 +309,119 @@ fun DashboardScreen(
             )
         }
     }
+}
+
+@Composable
+private fun LocalStreamingCard(
+    streamState: StreamState,
+    streamKey: String,
+    selectedLocalUri: String,
+    onStreamKeyChange: (String) -> Unit,
+    onPickMedia: () -> Unit,
+    onStopStream: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("Local Media Stream", style = MaterialTheme.typography.titleSmall)
+
+            OutlinedTextField(
+                value = streamKey,
+                onValueChange = onStreamKeyChange,
+                label = { Text("Stream key") },
+                singleLine = true,
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (selectedLocalUri.isNotBlank()) {
+                Text(
+                    text = "Selected: $selectedLocalUri",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
+
+            Text(
+                text = "Status: ${streamStateLabel(streamState)}",
+                style = MaterialTheme.typography.labelLarge
+            )
+
+            if (isFfmpegUnavailable(streamState)) {
+                Surface(
+                    color = MaterialTheme.colorScheme.errorContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "FFmpeg is unavailable on this runtime. Local streaming cannot start until FFmpeg is packaged/installed.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilledTonalButton(
+                    onClick = onPickMedia,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.VideoLibrary, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Play Local Media")
+                }
+                OutlinedButton(
+                    onClick = onStopStream,
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Rounded.StopCircle, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Stop Stream")
+                }
+            }
+        }
+    }
+}
+
+private fun streamStateLabel(streamState: StreamState): String {
+    return when (streamState) {
+        StreamState.Idle -> "Idle"
+        is StreamState.Preparing -> "Preparing"
+        is StreamState.Streaming -> "Streaming"
+        is StreamState.Retrying -> "Retrying (attempt ${streamState.attempt})"
+        is StreamState.Error -> "Error - ${streamState.message}"
+        StreamState.Stopped -> "Stopped"
+    }
+}
+
+private fun isFfmpegUnavailable(streamState: StreamState): Boolean {
+    if (streamState !is StreamState.Error) return false
+    return streamState.message.contains("ffmpeg", ignoreCase = true)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

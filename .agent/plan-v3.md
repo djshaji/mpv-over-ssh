@@ -1,0 +1,13 @@
+# Prepare for upload on Play Store
+- [x] Finalize app name, icon, and description.
+- [x] Create high-quality screenshots and promotional graphics.
+- [x] Set up Play Store listing with appropriate categories and contact info.
+- [x] Ensure all app content complies with Play Store policies.
+- [x] Analyse whether Foreground Service usage can be replaced with a more limited background execution model to avoid the foreground service requirement and associated Play Store scrutiny.
+- [x] Analyse whether the Foreground Service and Background Service usage can be replaced with a more limited background execution model to avoid the foreground service requirement and associated Play Store scrutiny.
+- [x] Open files from other apps (e.g. file manager, gallery) and share to the app for streaming.
+- [x] Add a "Share to Stream" entry in the system share sheet for supported media types.
+- [x] Handle incoming shared content URIs and start the streaming flow directly from the shared file.
+- [x] On first opening the app, when user selects a profile, open the mpv control dashboard directly.
+- [x] Add an edit icon to the profile selection cards that allows users to edit the SSH connection details and save changes.
+- [x] Add a "Play Local Media" button in the dashboard that initiates the media selection and streaming flow.

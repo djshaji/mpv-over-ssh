@@ -1,15 +1,19 @@
 package org.acoustixaudio.opiqo.mpvoverssh.ui.dashboard
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.acoustixaudio.opiqo.mpvoverssh.data.AppRepository
 import org.acoustixaudio.opiqo.mpvoverssh.data.SshProfile
+import org.acoustixaudio.opiqo.mpvoverssh.streaming.LocalMediaStreamServiceController
+import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamOptions
 import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 
 data class DashboardUiState(
@@ -52,6 +56,7 @@ enum class ConnectionStatus {
 
 class DashboardViewModel(
     private val repository: AppRepository,
+    private val streamServiceController: LocalMediaStreamServiceController,
     private val profileId: Long
 ) : ViewModel() {
     private enum class CommandCategory {
@@ -69,6 +74,29 @@ class DashboardViewModel(
 
     init {
         loadProfile()
+        observeStreamState()
+    }
+
+    private fun observeStreamState() {
+        viewModelScope.launch {
+            streamServiceController.streamState.collectLatest { streamState ->
+                _uiState.update { state ->
+                    val stateWithStream = state.copy(streamState = streamState)
+                    if (streamState is StreamState.Error) {
+                        stateWithStream.copy(
+                            errorMessage = streamState.message,
+                            terminalOutput = appendTerminal(
+                                state.terminalOutput,
+                                "local-stream",
+                                "Error: ${streamState.message}"
+                            )
+                        )
+                    } else {
+                        stateWithStream
+                    }
+                }
+            }
+        }
     }
 
     private fun loadProfile() {
@@ -203,6 +231,39 @@ class DashboardViewModel(
         sendCommand(trimmedCommand)
     }
 
+    fun startLocalMediaStream(inputUri: Uri, publishUrl: String) {
+        viewModelScope.launch {
+            runCatching {
+                streamServiceController.startStreaming(
+                    inputUri = inputUri,
+                    publishUrl = publishUrl,
+                    options = StreamOptions()
+                )
+            }.onSuccess {
+                val remotePlaybackUrl = toRemotePlaybackUrl(publishUrl)
+                executeCommand(buildMpvPlayCommand(remotePlaybackUrl), CommandCategory.StartPlayback)
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(errorMessage = error.message ?: "Failed to start local media stream")
+                }
+            }
+        }
+    }
+
+    fun stopLocalMediaStream() {
+        viewModelScope.launch {
+            runCatching { streamServiceController.stopStreaming() }
+                .onSuccess {
+                    sendCommand("echo \"stop\" | socat - /tmp/mpvsocket")
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(errorMessage = error.message ?: "Failed to stop local media stream")
+                    }
+                }
+        }
+    }
+
     fun clearTerminal() {
         _uiState.update { it.copy(terminalOutput = "") }
     }
@@ -217,6 +278,10 @@ class DashboardViewModel(
 
     fun clearErrorMessage() {
         _uiState.update { it.copy(errorMessage = null) }
+    }
+
+    fun reportUserError(message: String) {
+        _uiState.update { it.copy(errorMessage = message) }
     }
 
     fun clearRemoteBrowserError() {
@@ -346,6 +411,16 @@ class DashboardViewModel(
         return "'${value.replace("'", "'\\''")}'"
     }
 
+    private fun toRemotePlaybackUrl(publishUrl: String): String {
+        val parsed = Uri.parse(publishUrl)
+        if (parsed.host == null) return publishUrl
+        val port = parsed.port.takeIf { it > 0 } ?: 1935
+        return parsed.buildUpon()
+            .encodedAuthority("127.0.0.1:$port")
+            .build()
+            .toString()
+    }
+
     private fun buildUserErrorMessage(rawMessage: String, category: CommandCategory): String {
         return when {
             isConnectionFailure(rawMessage) -> "SSH connection failed. Check host, credentials, or network."
@@ -410,11 +485,12 @@ class DashboardViewModel(
 
     class Factory(
         private val repository: AppRepository,
+        private val streamServiceController: LocalMediaStreamServiceController,
         private val profileId: Long
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return DashboardViewModel(repository, profileId) as T
+            return DashboardViewModel(repository, streamServiceController, profileId) as T
         }
     }
 }
