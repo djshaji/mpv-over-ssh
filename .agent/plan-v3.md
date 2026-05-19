@@ -15,9 +15,12 @@
 
 ## Phase 3: Final verification before submission
 - [x] Implement `ACTION_SEND` handling in `MainActivity` and auto-start local streaming when launched from shared media.
+- [x] Show a profile picker for shared media when multiple profiles exist and no dashboard session is active; reuse active dashboard profile without prompting.
 - [x] Implement About dialog entry with version/author and quick links (Source, Issues, Report).
 - [x] Implement graceful fallback message when "Report an Issue" mail intent cannot be handled.
 - [x] Implement delete confirmation dialog before removing a profile.
+- [x] Add button to close remote mpv process.
+- [x] Add button to disconnect SSH and reset session state.
 - [ ] Verify share-to-stream flow for `video/*`, `audio/*`, and `image/*` from Files and Gallery.
 - [ ] Verify incoming shared `content://` URIs still stream after app process restart.
 - [ ] Verify local media picker supports device file system images in addition to audio/video.

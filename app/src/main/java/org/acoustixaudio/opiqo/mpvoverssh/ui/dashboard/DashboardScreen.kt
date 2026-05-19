@@ -70,7 +70,8 @@ fun DashboardScreen(
     var showThemeMenu by remember { mutableStateOf(false) }
     var showTerminal by rememberSaveable { mutableStateOf(true) }
     var showProfilePicker by remember { mutableStateOf(false) }
-    var hasConsumedInitialSharedUri by rememberSaveable(initialSharedUri) { mutableStateOf(false) }
+    // Do not persist this across process recreation; shared routes should auto-start again.
+    var hasConsumedInitialSharedUri by remember(initialSharedUri) { mutableStateOf(false) }
 
     val localMediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -278,11 +279,35 @@ fun DashboardScreen(
                 enabled = !isBusy
             )
 
-            ControlGrid(
-                viewModel = viewModel,
-                socketControlsEnabled = socketControlsEnabled,
-                launchEnabled = !isBusy
-            )
+             ControlGrid(
+                 viewModel = viewModel,
+                 socketControlsEnabled = socketControlsEnabled,
+                 launchEnabled = !isBusy
+             )
+
+             Row(
+                 modifier = Modifier.fillMaxWidth(),
+                 horizontalArrangement = Arrangement.spacedBy(8.dp)
+             ) {
+                 OutlinedButton(
+                     onClick = { viewModel.closeMpv() },
+                     enabled = !isBusy,
+                     modifier = Modifier.weight(1f)
+                 ) {
+                     Icon(Icons.Rounded.Close, contentDescription = null)
+                     Spacer(modifier = Modifier.width(6.dp))
+                     Text("Close mpv")
+                 }
+                 OutlinedButton(
+                     onClick = { viewModel.disconnect() },
+                     enabled = !isBusy,
+                     modifier = Modifier.weight(1f)
+                 ) {
+                     Icon(Icons.Rounded.Logout, contentDescription = null)
+                     Spacer(modifier = Modifier.width(6.dp))
+                     Text("Disconnect")
+                 }
+             }
 
             if (!uiState.isSocketReady) {
                 Text(

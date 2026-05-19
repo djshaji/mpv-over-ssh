@@ -195,13 +195,36 @@ class DashboardViewModel(
     fun previousTrack() = sendSocketCommand("playlist-prev")
 
     fun launchMpv() {
-        executeCommand(
-            "pgrep -x mpv >/dev/null || nohup mpv --idle --force-window --input-ipc-server=/tmp/mpvsocket >/tmp/mpv.log 2>&1 &",
-            CommandCategory.LaunchMpv
-        )
-    }
+         executeCommand(
+             "pgrep -x mpv >/dev/null || nohup mpv --idle --force-window --input-ipc-server=/tmp/mpvsocket >/tmp/mpv.log 2>&1 &",
+             CommandCategory.LaunchMpv
+         )
+     }
 
-    fun playUrl(url: String) {
+     fun closeMpv() {
+         executeCommand("pkill -9 mpv || true", CommandCategory.Generic)
+     }
+
+     fun disconnect() {
+         viewModelScope.launch {
+             localStreamMonitorJob?.cancel()
+             localStreamMonitorJob = null
+             runCatching { streamServiceController.stopStreaming() }
+             _uiState.update { state ->
+                 state.copy(
+                     connectionStatus = ConnectionStatus.Disconnected,
+                     isSocketReady = false,
+                     terminalOutput = appendTerminal(
+                         state.terminalOutput,
+                         "disconnect",
+                         "Connection closed."
+                     )
+                 )
+             }
+         }
+     }
+
+     fun playUrl(url: String) {
         val trimmedUrl = url.trim()
         if (trimmedUrl.isEmpty()) {
             _uiState.update { it.copy(errorMessage = "URL cannot be empty") }

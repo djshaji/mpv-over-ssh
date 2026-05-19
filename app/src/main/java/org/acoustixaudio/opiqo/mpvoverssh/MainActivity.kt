@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -31,6 +32,8 @@ import kotlinx.coroutines.launch
 import org.acoustixaudio.opiqo.mpvoverssh.settings.ThemeMode
 import org.acoustixaudio.opiqo.mpvoverssh.ui.dashboard.DashboardScreen
 import org.acoustixaudio.opiqo.mpvoverssh.ui.navigation.Route
+import org.acoustixaudio.opiqo.mpvoverssh.ui.navigation.ShareIntentRouteDecision
+import org.acoustixaudio.opiqo.mpvoverssh.ui.navigation.resolveShareIntentRouteDecision
 import org.acoustixaudio.opiqo.mpvoverssh.ui.profiles.ProfilesScreen
 import org.acoustixaudio.opiqo.mpvoverssh.ui.theme.MpvOverSshTheme
 
@@ -49,30 +52,39 @@ class MainActivity : ComponentActivity() {
                 .collectAsStateWithLifecycle(initialValue = ThemeMode.System)
             val profiles = application.repository.allProfiles
                 .collectAsStateWithLifecycle(initialValue = emptyList())
-            var lastHandledSharedUri by rememberSaveable { mutableStateOf<String?>(null) }
+            // Keep dedupe local to current composition lifetime so process restarts can handle
+            // the same shared URI again when relaunched from the share sheet.
+            var lastHandledSharedUri by remember { mutableStateOf<String?>(null) }
             // URI waiting for a profile to be selected from the picker
             var profilePickerUri by rememberSaveable { mutableStateOf<String?>(null) }
 
             LaunchedEffect(pendingSharedUri.value, profiles.value) {
                 val sharedUri = pendingSharedUri.value ?: return@LaunchedEffect
                 if (sharedUri == lastHandledSharedUri) return@LaunchedEffect
-                if (profiles.value.isEmpty()) return@LaunchedEffect
+                val profileIds = profiles.value.map { it.id }
 
-                lastHandledSharedUri = sharedUri
-                pendingSharedUri.value = null
-
-                // If a Dashboard is already on the backstack the user is already connected to a
-                // profile; push a new entry for the same profile carrying the shared URI so the
-                // DashboardScreen auto-starts streaming without asking again.
-                val currentTop = backStack.lastOrNull()
-                if (currentTop is Route.Dashboard) {
-                    backStack.add(Route.Dashboard(currentTop.profileId, sharedUri))
-                } else if (profiles.value.size == 1) {
-                    // Only one profile – no need to show a picker
-                    backStack.add(Route.Dashboard(profiles.value.first().id, sharedUri))
-                } else {
-                    // Multiple profiles and no active session – show picker
-                    profilePickerUri = sharedUri
+                when (
+                    val routeDecision = resolveShareIntentRouteDecision(
+                        currentTopRoute = backStack.lastOrNull() as? Route,
+                        profileIds = profileIds
+                    )
+                ) {
+                    ShareIntentRouteDecision.WaitForProfiles -> return@LaunchedEffect
+                    is ShareIntentRouteDecision.ReuseActiveDashboard -> {
+                        lastHandledSharedUri = sharedUri
+                        pendingSharedUri.value = null
+                        backStack[backStack.lastIndex] = Route.Dashboard(routeDecision.profileId, sharedUri)
+                    }
+                    is ShareIntentRouteDecision.UseOnlyProfile -> {
+                        lastHandledSharedUri = sharedUri
+                        pendingSharedUri.value = null
+                        backStack.add(Route.Dashboard(routeDecision.profileId, sharedUri))
+                    }
+                    ShareIntentRouteDecision.ShowProfilePicker -> {
+                        lastHandledSharedUri = sharedUri
+                        pendingSharedUri.value = null
+                        profilePickerUri = sharedUri
+                    }
                 }
             }
 
