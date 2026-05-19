@@ -63,7 +63,6 @@ fun DashboardScreen(
     var mediaUrl by rememberSaveable { mutableStateOf("") }
     var customCommand by rememberSaveable { mutableStateOf("") }
     var seekPercent by rememberSaveable { mutableFloatStateOf(50f) }
-    var streamKey by rememberSaveable { mutableStateOf("mobile") }
     var selectedLocalUri by rememberSaveable { mutableStateOf("") }
     var showThemeMenu by remember { mutableStateOf(false) }
     var showTerminal by rememberSaveable { mutableStateOf(true) }
@@ -79,18 +78,7 @@ fun DashboardScreen(
                 )
             }
             selectedLocalUri = uri.toString()
-            val host = uiState.profile?.host
-            if (host.isNullOrBlank()) {
-                viewModel.reportUserError("Profile host is missing. Update profile settings first.")
-                return@rememberLauncherForActivityResult
-            }
-            val normalizedStreamKey = streamKey.trim()
-            if (normalizedStreamKey.isBlank()) {
-                viewModel.reportUserError("Stream key cannot be empty.")
-                return@rememberLauncherForActivityResult
-            }
-            val publishUrl = "rtmp://$host:1935/live/$normalizedStreamKey"
-            viewModel.startLocalMediaStream(uri, publishUrl)
+            viewModel.startLocalMediaStream(uri)
         }
     }
 
@@ -238,9 +226,7 @@ fun DashboardScreen(
 
             LocalStreamingCard(
                 streamState = uiState.streamState,
-                streamKey = streamKey,
                 selectedLocalUri = selectedLocalUri,
-                onStreamKeyChange = { streamKey = it },
                 onPickMedia = { localMediaPicker.launch(arrayOf("video/*", "audio/*")) },
                 onStopStream = viewModel::stopLocalMediaStream,
                 enabled = !isBusy
@@ -344,9 +330,7 @@ fun DashboardScreen(
 @Composable
 private fun LocalStreamingCard(
     streamState: StreamState,
-    streamKey: String,
     selectedLocalUri: String,
-    onStreamKeyChange: (String) -> Unit,
     onPickMedia: () -> Unit,
     onStopStream: () -> Unit,
     enabled: Boolean,
@@ -361,14 +345,15 @@ private fun LocalStreamingCard(
         ) {
             Text("Local Media Stream", style = MaterialTheme.typography.titleSmall)
 
-            OutlinedTextField(
-                value = streamKey,
-                onValueChange = onStreamKeyChange,
-                label = { Text("Stream key") },
-                singleLine = true,
-                enabled = enabled,
-                modifier = Modifier.fillMaxWidth()
-            )
+            val activeStreamUrl = streamUrl(streamState)
+            if (activeStreamUrl != null) {
+                Text(
+                    text = "Serving at: $activeStreamUrl",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2
+                )
+            }
 
             if (selectedLocalUri.isNotBlank()) {
                 Text(
@@ -384,7 +369,7 @@ private fun LocalStreamingCard(
                 style = MaterialTheme.typography.labelLarge
             )
 
-            if (isFfmpegUnavailable(streamState)) {
+            if (streamState is StreamState.Error) {
                 Surface(
                     color = MaterialTheme.colorScheme.errorContainer,
                     shape = RoundedCornerShape(12.dp),
@@ -403,7 +388,7 @@ private fun LocalStreamingCard(
                             tint = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            text = "FFmpeg is unavailable on this runtime. Local streaming cannot start until FFmpeg is packaged/installed.",
+                            text = streamState.message,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -438,6 +423,14 @@ private fun LocalStreamingCard(
     }
 }
 
+private fun streamUrl(streamState: StreamState): String? {
+    return when (streamState) {
+        is StreamState.Preparing -> streamState.publishUrl
+        is StreamState.Streaming -> streamState.session.publishUrl
+        else -> null
+    }
+}
+
 private fun streamStateLabel(streamState: StreamState): String {
     return when (streamState) {
         StreamState.Idle -> "Idle"
@@ -449,10 +442,6 @@ private fun streamStateLabel(streamState: StreamState): String {
     }
 }
 
-private fun isFfmpegUnavailable(streamState: StreamState): Boolean {
-    if (streamState !is StreamState.Error) return false
-    return streamState.message.contains("ffmpeg", ignoreCase = true)
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

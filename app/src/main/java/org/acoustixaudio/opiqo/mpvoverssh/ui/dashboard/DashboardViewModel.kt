@@ -4,15 +4,19 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.acoustixaudio.opiqo.mpvoverssh.data.AppRepository
 import org.acoustixaudio.opiqo.mpvoverssh.data.SshProfile
-import org.acoustixaudio.opiqo.mpvoverssh.streaming.LocalMediaStreamServiceController
+import org.acoustixaudio.opiqo.mpvoverssh.streaming.LocalMediaStreamController
 import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamOptions
 import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 
@@ -56,7 +60,7 @@ enum class ConnectionStatus {
 
 class DashboardViewModel(
     private val repository: AppRepository,
-    private val streamServiceController: LocalMediaStreamServiceController,
+    private val streamServiceController: LocalMediaStreamController,
     private val profileId: Long
 ) : ViewModel() {
     private enum class CommandCategory {
@@ -68,6 +72,7 @@ class DashboardViewModel(
     }
 
     private var historyIdCounter: Long = 0L
+    private var localStreamMonitorJob: Job? = null
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
@@ -107,53 +112,59 @@ class DashboardViewModel(
     }
 
     fun sendCommand(command: String) {
-        executeCommand(command, CommandCategory.Generic)
+        viewModelScope.launch {
+            executeCommand(command, CommandCategory.Generic)
+        }
+    }
+
+    private suspend fun performCommand(command: String, category: CommandCategory) {
+        val profile = uiState.value.profile ?: return
+
+        _uiState.update { it.copy(connectionStatus = ConnectionStatus.Connecting, errorMessage = null) }
+        val result = repository.executeCommand(profile, command)
+
+        result.onSuccess { output ->
+            _uiState.update { state ->
+                val trimmedOutput = output.trimEnd()
+                state.copy(
+                    terminalOutput = appendTerminal(state.terminalOutput, command, trimmedOutput),
+                    commandHistory = appendHistory(state.commandHistory, command, trimmedOutput, isError = false),
+                    connectionStatus = ConnectionStatus.Connected,
+                    isSocketReady = resolveSocketReady(state.isSocketReady, category, trimmedOutput)
+                )
+            }
+        }.onFailure { error ->
+            _uiState.update { state ->
+                val rawMessage = error.message ?: "Unknown error"
+                val userMessage = buildUserErrorMessage(rawMessage, category)
+                val isConnectionFailure = isConnectionFailure(rawMessage)
+                val errorText = "Error: $userMessage"
+                state.copy(
+                    terminalOutput = appendTerminal(
+                        state.terminalOutput,
+                        command,
+                        errorText
+                    ),
+                    commandHistory = appendHistory(state.commandHistory, command, errorText, isError = true),
+                    connectionStatus = if (isConnectionFailure) {
+                        ConnectionStatus.Disconnected
+                    } else {
+                        ConnectionStatus.Connected
+                    },
+                    isSocketReady = when {
+                        isConnectionFailure -> false
+                        category == CommandCategory.SocketControl && isSocketUnavailable(rawMessage) -> false
+                        else -> state.isSocketReady
+                    },
+                    errorMessage = userMessage
+                )
+            }
+        }
     }
 
     private fun executeCommand(command: String, category: CommandCategory) {
-        val profile = uiState.value.profile ?: return
-
         viewModelScope.launch {
-            _uiState.update { it.copy(connectionStatus = ConnectionStatus.Connecting, errorMessage = null) }
-            val result = repository.executeCommand(profile, command)
-
-            result.onSuccess { output ->
-                _uiState.update { state ->
-                    val trimmedOutput = output.trimEnd()
-                    state.copy(
-                        terminalOutput = appendTerminal(state.terminalOutput, command, trimmedOutput),
-                        commandHistory = appendHistory(state.commandHistory, command, trimmedOutput, isError = false),
-                        connectionStatus = ConnectionStatus.Connected,
-                        isSocketReady = resolveSocketReady(state.isSocketReady, category, trimmedOutput)
-                    )
-                }
-            }.onFailure { error ->
-                _uiState.update { state ->
-                    val rawMessage = error.message ?: "Unknown error"
-                    val userMessage = buildUserErrorMessage(rawMessage, category)
-                    val isConnectionFailure = isConnectionFailure(rawMessage)
-                    val errorText = "Error: $userMessage"
-                    state.copy(
-                        terminalOutput = appendTerminal(
-                            state.terminalOutput,
-                            command,
-                            errorText
-                        ),
-                        commandHistory = appendHistory(state.commandHistory, command, errorText, isError = true),
-                        connectionStatus = if (isConnectionFailure) {
-                            ConnectionStatus.Disconnected
-                        } else {
-                            ConnectionStatus.Connected
-                        },
-                        isSocketReady = when {
-                            isConnectionFailure -> false
-                            category == CommandCategory.SocketControl && isSocketUnavailable(rawMessage) -> false
-                            else -> state.isSocketReady
-                        },
-                        errorMessage = userMessage
-                    )
-                }
-            }
+            performCommand(command, category)
         }
     }
 
@@ -231,27 +242,32 @@ class DashboardViewModel(
         sendCommand(trimmedCommand)
     }
 
-    fun startLocalMediaStream(inputUri: Uri, publishUrl: String) {
+    fun startLocalMediaStream(inputUri: Uri) {
         viewModelScope.launch {
+            localStreamMonitorJob?.cancel()
             runCatching {
                 streamServiceController.startStreaming(
                     inputUri = inputUri,
-                    publishUrl = publishUrl,
                     options = StreamOptions()
                 )
-            }.onSuccess {
-                val remotePlaybackUrl = toRemotePlaybackUrl(publishUrl)
-                executeCommand(buildMpvPlayCommand(remotePlaybackUrl), CommandCategory.StartPlayback)
+            }.onSuccess { streamUrl ->
+                executeCommand(buildMpvPlayCommand(streamUrl), CommandCategory.StartPlayback)
+                localStreamMonitorJob = viewModelScope.launch {
+                    monitorLocalPlaybackEnded()
+                }
             }.onFailure { error ->
                 _uiState.update {
                     it.copy(errorMessage = error.message ?: "Failed to start local media stream")
                 }
+                runCatching { streamServiceController.stopStreaming() }
             }
         }
     }
 
     fun stopLocalMediaStream() {
         viewModelScope.launch {
+            localStreamMonitorJob?.cancel()
+            localStreamMonitorJob = null
             runCatching { streamServiceController.stopStreaming() }
                 .onSuccess {
                     sendCommand("echo \"stop\" | socat - /tmp/mpvsocket")
@@ -301,7 +317,16 @@ class DashboardViewModel(
     }
 
     private fun buildMpvPlayCommand(target: String): String {
-        return "nohup mpv --force-window --input-ipc-server=/tmp/mpvsocket ${shellQuote(target)} >/tmp/mpv.log 2>&1 &"
+        return buildMpvPlayCommand(target, background = true)
+    }
+
+    private fun buildMpvPlayCommand(target: String, background: Boolean): String {
+        val baseCommand = "mpv --force-window --input-ipc-server=/tmp/mpvsocket ${shellQuote(target)}"
+        return if (background) {
+            "nohup $baseCommand >/tmp/mpv.log 2>&1 &"
+        } else {
+            baseCommand
+        }
     }
 
     private fun listRemoteDirectory(path: String) {
@@ -411,14 +436,27 @@ class DashboardViewModel(
         return "'${value.replace("'", "'\\''")}'"
     }
 
-    private fun toRemotePlaybackUrl(publishUrl: String): String {
-        val parsed = Uri.parse(publishUrl)
-        if (parsed.host == null) return publishUrl
-        val port = parsed.port.takeIf { it > 0 } ?: 1935
-        return parsed.buildUpon()
-            .encodedAuthority("127.0.0.1:$port")
-            .build()
-            .toString()
+    private suspend fun monitorLocalPlaybackEnded() {
+        val profile = uiState.value.profile ?: return
+        while (currentCoroutineContext().isActive) {
+            delay(2_000)
+            val result = repository.executeCommand(profile, "pgrep -x mpv >/dev/null && echo '__MPV_RUNNING__' || echo '__MPV_STOPPED__'")
+            val isRunning = result.getOrNull()?.lineSequence()?.any { it.trim() == "__MPV_RUNNING__" } == true
+            if (!isRunning) {
+                streamServiceController.stopStreaming()
+                _uiState.update { state ->
+                    state.copy(
+                        terminalOutput = appendTerminal(
+                            state.terminalOutput,
+                            "local-stream-monitor",
+                            "Local playback ended; HTTP stream stopped."
+                        )
+                    )
+                }
+                localStreamMonitorJob = null
+                return
+            }
+        }
     }
 
     private fun buildUserErrorMessage(rawMessage: String, category: CommandCategory): String {
@@ -485,7 +523,7 @@ class DashboardViewModel(
 
     class Factory(
         private val repository: AppRepository,
-        private val streamServiceController: LocalMediaStreamServiceController,
+        private val streamServiceController: LocalMediaStreamController,
         private val profileId: Long
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")

@@ -1,17 +1,12 @@
 # Prepare for upload on Play Store
-- [x] Finalize app name, icon, and description.
+- [x] Implement simple http streaming server in the app using Android httpd, NanoHTTPD, or similar library to serve local media files over HTTP for streaming.
+- [x] Remove Foreground service and notification for streaming feature. Replace with a simpler streaming flow that starts when user selects a file and stops when playback ends or user cancels.
 - [x] Create high-quality screenshots and promotional graphics.
 - [x] Set up Play Store listing with appropriate categories and contact info.
 - [x] Ensure all app content complies with Play Store policies.
-- [x] Analyse whether Foreground Service usage can be replaced with a more limited background execution model to avoid the foreground service requirement and associated Play Store scrutiny.
-- [x] Analyse whether the Foreground Service and Background Service usage can be replaced with a more limited background execution model to avoid the foreground service requirement and associated Play Store scrutiny.
 - [x] Open files from other apps (e.g. file manager, gallery) and share to the app for streaming.
 - [x] Add a "Share to Stream" entry in the system share sheet for supported media types.
 - [x] Handle incoming shared content URIs and start the streaming flow directly from the shared file.
-- [x] On first opening the app, when user selects a profile, open the mpv control dashboard directly.
-- [x] Add an edit icon to the profile selection cards that allows users to edit the SSH connection details and save changes.
-- [x] Add a "Play Local Media" button in the dashboard that initiates the media selection and streaming flow.
 - [x] Ask before deleting a profile with a confirmation dialog.
-- [x] Implement simple http streaming server in the app using Android httpd, NanoHTTPD, or similar library to serve local media files over HTTP for streaming.
 - [x] Add about page with app version, author info, and links to source code and issue tracker.
 - [x] Add a "Report an Issue" button that opens the user's email client with a pre-filled email template for bug reports and feedback.
