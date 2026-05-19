@@ -51,14 +51,15 @@ fun DashboardScreen(
     onSwitchProfile: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    val viewModel: DashboardViewModel = viewModel(
-        factory = DashboardViewModel.Factory(
-            application.repository,
-            application.localMediaStreamController,
-            profileId
-        )
-    )
+     val context = LocalContext.current
+     val viewModel: DashboardViewModel = viewModel(
+         factory = DashboardViewModel.Factory(
+             application.repository,
+             application.localMediaStreamController,
+             profileId,
+             context.applicationContext
+         )
+     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -203,7 +204,8 @@ fun DashboardScreen(
             ) {
                 ConnectionStatusChip(status = uiState.connectionStatus)
 
-                if (uiState.connectionStatus == ConnectionStatus.Disconnected && profiles.size > 1 && false) {
+                val showProfileSwitcher = false
+                if (showProfileSwitcher && uiState.connectionStatus == ConnectionStatus.Disconnected && profiles.size > 1) {
                     Box {
                         OutlinedButton(onClick = { showProfilePicker = true }) {
                             Icon(Icons.Rounded.SwitchAccount, contentDescription = null)

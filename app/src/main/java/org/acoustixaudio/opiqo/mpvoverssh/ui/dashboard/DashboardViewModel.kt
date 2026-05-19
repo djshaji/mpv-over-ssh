@@ -23,15 +23,16 @@ import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamOptions
 import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 
 data class DashboardUiState(
-    val profile: SshProfile? = null,
-    val connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
-    val terminalOutput: String = "",
-    val commandHistory: List<CommandHistoryItem> = emptyList(),
-    val remoteBrowser: RemoteBrowserState = RemoteBrowserState(),
-    val streamState: StreamState = StreamState.Idle,
-    val isSocketReady: Boolean = false,
-    val errorMessage: String? = null
-)
+     val profile: SshProfile? = null,
+     val connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
+     val terminalOutput: String = "",
+     val commandHistory: List<CommandHistoryItem> = emptyList(),
+     val remoteBrowser: RemoteBrowserState = RemoteBrowserState(),
+     val streamState: StreamState = StreamState.Idle,
+     val isSocketReady: Boolean = false,
+     val errorMessage: String? = null,
+     val currentMediaIsImage: Boolean = false
+ )
 
 data class CommandHistoryItem(
     val id: Long,
@@ -61,10 +62,11 @@ enum class ConnectionStatus {
 }
 
 class DashboardViewModel(
-    private val repository: AppRepository,
-    private val streamServiceController: LocalMediaStreamController,
-    private val profileId: Long
-) : ViewModel() {
+     private val repository: AppRepository,
+     private val streamServiceController: LocalMediaStreamController,
+     private val profileId: Long,
+     private val applicationContext: android.content.Context
+ ) : ViewModel() {
     private enum class CommandCategory {
         Generic,
         SocketControl,
@@ -225,13 +227,15 @@ class DashboardViewModel(
      }
 
      fun playUrl(url: String) {
-        val trimmedUrl = url.trim()
-        if (trimmedUrl.isEmpty()) {
-            _uiState.update { it.copy(errorMessage = "URL cannot be empty") }
-            return
-        }
-        executeCommand(buildMpvPlayCommand(trimmedUrl), CommandCategory.StartPlayback)
-    }
+         val trimmedUrl = url.trim()
+         if (trimmedUrl.isEmpty()) {
+             _uiState.update { it.copy(errorMessage = "URL cannot be empty") }
+             return
+         }
+         val isImage = isImagePath(trimmedUrl)
+         executeCommand(buildMpvPlayCommand(trimmedUrl, isImage = isImage), CommandCategory.StartPlayback)
+         _uiState.update { it.copy(currentMediaIsImage = isImage) }
+     }
 
     fun openRemoteBrowser(startPath: String = "/") {
         _uiState.update { state ->
@@ -256,10 +260,12 @@ class DashboardViewModel(
         listRemoteDirectory(parent)
     }
 
-    fun selectRemoteFile(path: String) {
-        executeCommand(buildMpvPlayCommand(path), CommandCategory.StartPlayback)
-        closeRemoteBrowser()
-    }
+     fun selectRemoteFile(path: String) {
+         val isImage = isImagePath(path)
+         executeCommand(buildMpvPlayCommand(path, isImage = isImage), CommandCategory.StartPlayback)
+         _uiState.update { it.copy(currentMediaIsImage = isImage) }
+         closeRemoteBrowser()
+     }
 
     fun sendCustomCommand(command: String) {
         val trimmedCommand = command.trim()
@@ -270,27 +276,29 @@ class DashboardViewModel(
         sendCommand(trimmedCommand)
     }
 
-    fun startLocalMediaStream(inputUri: Uri) {
-        viewModelScope.launch {
-            localStreamMonitorJob?.cancel()
-            runCatching {
-                streamServiceController.startStreaming(
-                    inputUri = inputUri,
-                    options = StreamOptions()
-                )
-            }.onSuccess { streamUrl ->
-                executeCommand(buildMpvPlayCommand(streamUrl), CommandCategory.StartPlayback)
-                localStreamMonitorJob = viewModelScope.launch {
-                    monitorLocalPlaybackEnded()
-                }
-            }.onFailure { error ->
-                _uiState.update {
-                    it.copy(errorMessage = error.message ?: "Failed to start local media stream")
-                }
-                runCatching { streamServiceController.stopStreaming() }
-            }
-        }
-    }
+     fun startLocalMediaStream(inputUri: Uri) {
+         viewModelScope.launch {
+             localStreamMonitorJob?.cancel()
+             runCatching {
+                 streamServiceController.startStreaming(
+                     inputUri = inputUri,
+                     options = StreamOptions()
+                 )
+             }.onSuccess { streamUrl ->
+                 val isImage = isImageUri(inputUri)
+                 executeCommand(buildMpvPlayCommand(streamUrl, isImage = isImage), CommandCategory.StartPlayback)
+                 _uiState.update { it.copy(currentMediaIsImage = isImage) }
+                 localStreamMonitorJob = viewModelScope.launch {
+                     monitorLocalPlaybackEnded()
+                 }
+             }.onFailure { error ->
+                 _uiState.update {
+                     it.copy(errorMessage = error.message ?: "Failed to start local media stream")
+                 }
+                 runCatching { streamServiceController.stopStreaming() }
+             }
+         }
+     }
 
     fun stopLocalMediaStream() {
         viewModelScope.launch {
@@ -344,18 +352,23 @@ class DashboardViewModel(
         executeCommand("echo \"$command\" | socat - /tmp/mpvsocket", CommandCategory.SocketControl)
     }
 
-    private fun buildMpvPlayCommand(target: String): String {
-        return buildMpvPlayCommand(target, background = true)
-    }
+     private fun buildMpvPlayCommand(target: String): String {
+         return buildMpvPlayCommand(target, background = true, isImage = false)
+     }
 
-    private fun buildMpvPlayCommand(target: String, background: Boolean): String {
-        val baseCommand = "mpv --force-window --input-ipc-server=/tmp/mpvsocket ${shellQuote(target)}"
-        return if (background) {
-            "nohup $baseCommand >/tmp/mpv.log 2>&1 &"
-        } else {
-            baseCommand
-        }
-    }
+     private fun buildMpvPlayCommand(target: String, isImage: Boolean = false): String {
+         return buildMpvPlayCommand(target, background = true, isImage = isImage)
+     }
+
+     private fun buildMpvPlayCommand(target: String, background: Boolean, isImage: Boolean = false): String {
+         val loopFlag = if (isImage) " --loop" else ""
+         val baseCommand = "mpv --force-window --input-ipc-server=/tmp/mpvsocket$loopFlag ${shellQuote(target)}"
+         return if (background) {
+             "nohup $baseCommand >/tmp/mpv.log 2>&1 &"
+         } else {
+             baseCommand
+         }
+     }
 
     private fun listRemoteDirectory(path: String) {
         val profile = uiState.value.profile ?: return
@@ -460,9 +473,30 @@ class DashboardViewModel(
         return if (idx <= 0) "/" else normalized.substring(0, idx)
     }
 
-    private fun shellQuote(value: String): String {
-        return "'${value.replace("'", "'\\''")}'"
-    }
+     private fun shellQuote(value: String): String {
+         return "'${value.replace("'", "'\\''")}'"
+     }
+
+     private fun isImageUri(uri: Uri): Boolean {
+         // First try to get MIME type from ContentResolver
+         val mimeType = runCatching {
+             applicationContext.contentResolver.getType(uri)
+         }.getOrNull()
+
+         if (mimeType != null && mimeType.startsWith("image/")) {
+             return true
+         }
+
+         // Fall back to checking file path/extension
+         val path = uri.path ?: uri.toString()
+         return isImagePath(path)
+     }
+
+     private fun isImagePath(path: String): Boolean {
+         val lowerPath = path.lowercase()
+         val imageExtensions = setOf(".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".svg", ".ico")
+         return imageExtensions.any { lowerPath.endsWith(it) }
+     }
 
     private suspend fun monitorLocalPlaybackEnded() {
         val profile = uiState.value.profile ?: return
@@ -549,14 +583,15 @@ class DashboardViewModel(
         return (listOf(next) + current).take(50)
     }
 
-    class Factory(
-        private val repository: AppRepository,
-        private val streamServiceController: LocalMediaStreamController,
-        private val profileId: Long
-    ) : ViewModelProvider.Factory {
-        @Suppress("UNCHECKED_CAST")
-        override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return DashboardViewModel(repository, streamServiceController, profileId) as T
-        }
-    }
-}
+     class Factory(
+         private val repository: AppRepository,
+         private val streamServiceController: LocalMediaStreamController,
+         private val profileId: Long,
+         private val applicationContext: android.content.Context
+     ) : ViewModelProvider.Factory {
+         @Suppress("UNCHECKED_CAST")
+         override fun <T : ViewModel> create(modelClass: Class<T>): T {
+             return DashboardViewModel(repository, streamServiceController, profileId, applicationContext) as T
+         }
+     }
+ }
