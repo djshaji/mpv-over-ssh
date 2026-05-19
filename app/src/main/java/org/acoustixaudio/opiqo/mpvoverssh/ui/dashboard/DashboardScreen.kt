@@ -227,7 +227,7 @@ fun DashboardScreen(
             LocalStreamingCard(
                 streamState = uiState.streamState,
                 selectedLocalUri = selectedLocalUri,
-                onPickMedia = { localMediaPicker.launch(arrayOf("video/*", "audio/*")) },
+                onPickMedia = { localMediaPicker.launch(arrayOf("video/*", "audio/*", "image/*")) },
                 onStopStream = viewModel::stopLocalMediaStream,
                 enabled = !isBusy
             )
@@ -344,6 +344,11 @@ private fun LocalStreamingCard(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text("Local Media Stream", style = MaterialTheme.typography.titleSmall)
+            Text(
+                text = "Pick local video, audio, or image files.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
             val activeStreamUrl = streamUrl(streamState)
             if (activeStreamUrl != null) {

@@ -30,6 +30,7 @@ Run from the project root with the Gradle wrapper:
 - **Scrollable dashboard**: The mpv control screen now supports smooth vertical scrolling to accommodate all controls and terminal output on devices with limited screen space.
 - **Terminal toggle button**: Added a "Show/Hide" button above the terminal output for hiding the terminal panel and focusing on controls.
 - **Symlink support in file browser**: The remote file browser now follows symbolic links when browsing the file system, allowing access to linked files and directories.
+- **Image playback support**: Local picker now accepts `image/*` files so device images can be streamed to remote `mpv`.
 
 ## Setting up local HTTP streaming
 Local media streaming now uses a simple HTTP server inside the Android app.
