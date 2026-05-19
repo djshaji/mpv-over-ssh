@@ -198,49 +198,49 @@ fun DashboardScreen(
          ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ConnectionStatusChip(status = uiState.connectionStatus)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (uiState.connectionStatus == ConnectionStatus.Disconnected && profiles.size > 1) {
-                        Box {
-                            OutlinedButton(onClick = { showProfilePicker = true }) {
-                                Icon(Icons.Rounded.SwitchAccount, contentDescription = null)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Switch Profile")
-                            }
-                            DropdownMenu(
-                                expanded = showProfilePicker,
-                                onDismissRequest = { showProfilePicker = false }
-                            ) {
-                                profiles.forEach { profile ->
-                                    DropdownMenuItem(
-                                        text = { Text(profile.name) },
-                                        onClick = {
-                                            showProfilePicker = false
-                                            if (profile.id != profileId) {
-                                                onSwitchProfile(profile.id)
-                                            }
-                                        },
-                                        trailingIcon = {
-                                            if (profile.id == profileId) {
-                                                Icon(Icons.Rounded.Check, contentDescription = null)
-                                            }
+
+                if (uiState.connectionStatus == ConnectionStatus.Disconnected && profiles.size > 1 && false) {
+                    Box {
+                        OutlinedButton(onClick = { showProfilePicker = true }) {
+                            Icon(Icons.Rounded.SwitchAccount, contentDescription = null)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Switch Profile")
+                        }
+                        DropdownMenu(
+                            expanded = showProfilePicker,
+                            onDismissRequest = { showProfilePicker = false }
+                        ) {
+                            profiles.forEach { profile ->
+                                DropdownMenuItem(
+                                    text = { Text(profile.name) },
+                                    onClick = {
+                                        showProfilePicker = false
+                                        if (profile.id != profileId) {
+                                            onSwitchProfile(profile.id)
                                         }
-                                    )
-                                }
+                                    },
+                                    trailingIcon = {
+                                        if (profile.id == profileId) {
+                                            Icon(Icons.Rounded.Check, contentDescription = null)
+                                        }
+                                    }
+                                )
                             }
                         }
                     }
-                    OutlinedButton(
-                        onClick = { viewModel.checkConnection() },
-                        enabled = !isBusy
-                    ) {
-                        Icon(Icons.Rounded.Sync, contentDescription = null)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Check Connection")
-                    }
+                }
+
+                OutlinedButton(
+                    onClick = { viewModel.checkConnection() },
+                    enabled = !isBusy
+                ) {
+                    Icon(Icons.Rounded.Sync, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Check Connection")
                 }
             }
 

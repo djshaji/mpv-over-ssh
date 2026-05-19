@@ -200,7 +200,7 @@ fun ProfileListPane(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("mpv over ssh")
                     Text("Version: $versionName")
-                    Text("Author: Opiqo")
+                    Text("Author: djshaji")
                 }
             },
             confirmButton = {
@@ -210,10 +210,10 @@ fun ProfileListPane(
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { openUrl("https://github.com/") }) {
+                    TextButton(onClick = { openUrl("https://github.com/djshaji/mpv-over-ssh") }) {
                         Text("Source")
                     }
-                    TextButton(onClick = { openUrl("https://github.com/issues") }) {
+                    TextButton(onClick = { openUrl("https://github.com/djshaji/mpv-over-ssh/issues") }) {
                         Text("Issues")
                     }
                     TextButton(onClick = {
