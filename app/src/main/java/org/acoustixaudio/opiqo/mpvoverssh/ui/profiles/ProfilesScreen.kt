@@ -1,5 +1,8 @@
 package org.acoustixaudio.opiqo.mpvoverssh.ui.profiles
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -23,6 +26,7 @@ import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaf
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,10 +114,57 @@ fun ProfileListPane(
     onEditProfile: (Long) -> Unit,
     onAddProfile: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    var showAboutDialog by remember { mutableStateOf(false) }
+    val versionName = remember {
+        runCatching {
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+        }.getOrDefault("unknown")
+    }
+
+    fun openUrl(url: String) {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        try {
+            context.startActivity(intent)
+        } catch (_: ActivityNotFoundException) {
+            scope.launch { snackbarHostState.showSnackbar("No app available to open link") }
+        }
+    }
+
+    fun reportIssue() {
+        val subject = "mpv over ssh - Bug report"
+        val body = buildString {
+            appendLine("Please describe the issue:")
+            appendLine()
+            appendLine("App version: $versionName")
+            appendLine("Android version: ${android.os.Build.VERSION.RELEASE}")
+            appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        }
+        val mailIntent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_EMAIL, arrayOf("support@example.com"))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        try {
+            context.startActivity(mailIntent)
+        } catch (_: ActivityNotFoundException) {
+            scope.launch { snackbarHostState.showSnackbar("No email app installed") }
+        }
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("SSH Profiles") })
+            TopAppBar(
+                title = { Text("SSH Profiles") },
+                actions = {
+                    TextButton(onClick = { showAboutDialog = true }) { Text("About") }
+                }
+            )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = onAddProfile) {
                 Icon(Icons.Rounded.Add, contentDescription = "Add Profile")
@@ -140,6 +191,41 @@ fun ProfileListPane(
             }
         }
     }
+
+    if (showAboutDialog) {
+        AlertDialog(
+            onDismissRequest = { showAboutDialog = false },
+            title = { Text("About") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("mpv over ssh")
+                    Text("Version: $versionName")
+                    Text("Author: Opiqo")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAboutDialog = false }) {
+                    Text("Close")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { openUrl("https://github.com/") }) {
+                        Text("Source")
+                    }
+                    TextButton(onClick = { openUrl("https://github.com/issues") }) {
+                        Text("Issues")
+                    }
+                    TextButton(onClick = {
+                        reportIssue()
+                        showAboutDialog = false
+                    }) {
+                        Text("Report")
+                    }
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -158,6 +244,7 @@ fun ProfileDetailPane(
     var privateKey by remember(profile) { mutableStateOf(profile?.privateKey ?: "") }
     var strictHostKeyChecking by remember(profile) { mutableStateOf(profile?.strictHostKeyChecking ?: false) }
     var password by remember(profile) { mutableStateOf(profile?.password ?: "") }
+    var showDeleteConfirmation by remember(profile) { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -173,7 +260,7 @@ fun ProfileDetailPane(
                         IconButton(onClick = { onConnect(profile) }) {
                             Icon(Icons.Rounded.PlayArrow, contentDescription = "Connect")
                         }
-                        IconButton(onClick = { onDelete(profile) }) {
+                        IconButton(onClick = { showDeleteConfirmation = true }) {
                             Icon(Icons.Rounded.Delete, contentDescription = "Delete")
                         }
                     }
@@ -254,5 +341,26 @@ fun ProfileDetailPane(
                 Text("Strict Host Key Checking")
             }
         }
+    }
+
+    if (showDeleteConfirmation && profile != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Delete profile") },
+            text = { Text("Are you sure you want to delete '${profile.name}'?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirmation = false
+                    onDelete(profile)
+                }) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

@@ -44,9 +44,11 @@ import org.acoustixaudio.opiqo.mpvoverssh.streaming.StreamState
 fun DashboardScreen(
     application: MpvOverSshApplication,
     profileId: Long,
+    initialSharedUri: String? = null,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onBack: () -> Unit,
+    onSwitchProfile: (Long) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -58,6 +60,7 @@ fun DashboardScreen(
         )
     )
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val profiles by viewModel.profiles.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
 
     var mediaUrl by rememberSaveable { mutableStateOf("") }
@@ -66,6 +69,8 @@ fun DashboardScreen(
     var selectedLocalUri by rememberSaveable { mutableStateOf("") }
     var showThemeMenu by remember { mutableStateOf(false) }
     var showTerminal by rememberSaveable { mutableStateOf(true) }
+    var showProfilePicker by remember { mutableStateOf(false) }
+    var hasConsumedInitialSharedUri by rememberSaveable(initialSharedUri) { mutableStateOf(false) }
 
     val localMediaPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -92,6 +97,15 @@ fun DashboardScreen(
             snackbarHostState.showSnackbar(message)
             viewModel.clearErrorMessage()
         }
+    }
+
+    LaunchedEffect(initialSharedUri, hasConsumedInitialSharedUri) {
+        if (hasConsumedInitialSharedUri) return@LaunchedEffect
+        val sharedUri = initialSharedUri?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val parsedUri = runCatching { Uri.parse(sharedUri) }.getOrNull() ?: return@LaunchedEffect
+        selectedLocalUri = sharedUri
+        viewModel.startLocalMediaStream(parsedUri)
+        hasConsumedInitialSharedUri = true
     }
 
     if (uiState.remoteBrowser.isVisible) {
@@ -187,13 +201,45 @@ fun DashboardScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 ConnectionStatusChip(status = uiState.connectionStatus)
-                OutlinedButton(
-                    onClick = { viewModel.checkConnection() },
-                    enabled = !isBusy
-                ) {
-                    Icon(Icons.Rounded.Sync, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Check Connection")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (uiState.connectionStatus == ConnectionStatus.Disconnected && profiles.size > 1) {
+                        Box {
+                            OutlinedButton(onClick = { showProfilePicker = true }) {
+                                Icon(Icons.Rounded.SwitchAccount, contentDescription = null)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Switch Profile")
+                            }
+                            DropdownMenu(
+                                expanded = showProfilePicker,
+                                onDismissRequest = { showProfilePicker = false }
+                            ) {
+                                profiles.forEach { profile ->
+                                    DropdownMenuItem(
+                                        text = { Text(profile.name) },
+                                        onClick = {
+                                            showProfilePicker = false
+                                            if (profile.id != profileId) {
+                                                onSwitchProfile(profile.id)
+                                            }
+                                        },
+                                        trailingIcon = {
+                                            if (profile.id == profileId) {
+                                                Icon(Icons.Rounded.Check, contentDescription = null)
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.checkConnection() },
+                        enabled = !isBusy
+                    ) {
+                        Icon(Icons.Rounded.Sync, contentDescription = null)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Check Connection")
+                    }
                 }
             }
 

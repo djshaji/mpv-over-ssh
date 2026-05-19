@@ -9,5 +9,8 @@ sealed interface Route : NavKey {
     data object Profiles : Route
     
     @Serializable
-    data class Dashboard(val profileId: Long) : Route
+    data class Dashboard(
+        val profileId: Long,
+        val sharedUri: String? = null
+    ) : Route
 }
